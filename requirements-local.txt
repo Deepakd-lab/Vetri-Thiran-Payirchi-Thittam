@@ -1,0 +1,6 @@
+# Optional dependencies for the local LaMini-Flan-T5 explanation model.
+# The default application does NOT need these packages.
+transformers>=4.45,<6.0
+torch>=2.2
+sentencepiece>=0.2
+accelerate>=0.34

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduGenie - AI Learning Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">AI-POWERED LEARNING</p>
+        <h1>EduGenie</h1>
+        <p class="subtitle">
+          Ask questions, simplify concepts, generate quizzes, summarize text,
+          and build a learning path with Gemini.
+        </p>
+      </div>
+      <span class="status" id="status">Ready</span>
+    </header>
+
+    <section class="card">
+      <label for="task">Choose a learning task</label>
+      <select id="task">
+        <option value="qa">Ask a Question</option>
+        <option value="explain">Explain a Concept</option>
+        <option value="quiz">Generate Quiz</option>
+        <option value="summarize">Summarize Text</option>
+        <option value="learn">Learning Path</option>
+      </select>
+
+      <div id="level-row" class="hidden">
+        <label for="level">Current level</label>
+        <select id="level">
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+
+      <label for="input">Your input</label>
+      <textarea id="input" rows="10"
+        placeholder="Example: Explain the Pythagoras theorem in simple terms."></textarea>
+
+      <div class="actions">
+        <button id="submit">Generate</button>
+        <button id="clear" class="secondary">Clear</button>
+      </div>
+    </section>
+
+    <section class="card result-card">
+      <div class="result-header">
+        <h2>Result</h2>
+        <button id="copy" class="secondary small">Copy</button>
+      </div>
+      <div id="result" class="result empty">
+        Your generated answer will appear here.
+      </div>
+    </section>
+  </main>
+
+<script>
+const task = document.getElementById("task");
+const input = document.getElementById("input");
+const level = document.getElementById("level");
+const levelRow = document.getElementById("level-row");
+const submit = document.getElementById("submit");
+const clear = document.getElementById("clear");
+const result = document.getElementById("result");
+const statusEl = document.getElementById("status");
+const copy = document.getElementById("copy");
+
+const placeholders = {
+  qa: "Example: Which is the largest ocean?",
+  explain: "Example: Explain the Pythagoras theorem in simple terms.",
+  quiz: "Paste a topic or educational passage here.",
+  summarize: "Paste the educational passage you want to summarize.",
+  learn: "Example: SQL"
+};
+
+task.addEventListener("change", () => {
+  input.placeholder = placeholders[task.value];
+  levelRow.classList.toggle("hidden", task.value !== "learn");
+});
+
+clear.addEventListener("click", () => {
+  input.value = "";
+  result.className = "result empty";
+  result.textContent = "Your generated answer will appear here.";
+  statusEl.textContent = "Ready";
+});
+
+copy.addEventListener("click", async () => {
+  if (!result.textContent.trim()) return;
+  await navigator.clipboard.writeText(result.textContent);
+  statusEl.textContent = "Copied";
+});
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderResult(data) {
+  if (typeof data === "string") {
+    result.innerHTML = escapeHtml(data).replaceAll("\n", "<br>");
+    return;
+  }
+
+  if (data.questions) {
+    result.innerHTML = data.questions.map((q, i) => `
+      <article class="quiz-question">
+        <h3>${i + 1}. ${escapeHtml(q.question)}</h3>
+        <div class="options">
+          ${q.options.map((option, idx) => `
+            <button class="option" data-question="${i}" data-option="${escapeHtml(option)}">
+              ${String.fromCharCode(65 + idx)}. ${escapeHtml(option)}
+            </button>
+          `).join("")}
+        </div>
+        <div class="feedback" id="feedback-${i}"></div>
+      </article>
+    `).join("");
+
+    document.querySelectorAll(".option").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const q = data.questions[Number(btn.dataset.question)];
+        const feedback = document.getElementById(`feedback-${btn.dataset.question}`);
+        const chosen = btn.dataset.option;
+        const correct = chosen === q.correct_answer;
+
+        feedback.className = `feedback ${correct ? "correct" : "wrong"}`;
+        feedback.textContent = correct
+          ? `Correct! ${q.explanation}`
+          : `Not quite. Correct answer: ${q.correct_answer}. ${q.explanation}`;
+      });
+    });
+    return;
+  }
+
+  if (data.plan) {
+    result.innerHTML = `
+      <p>${escapeHtml(data.overview)}</p>
+      ${data.plan.map(item => `
+        <article class="week">
+          <h3>Week ${item.week}: ${escapeHtml(item.focus)}</h3>
+          <p><strong>Topics:</strong> ${item.topics.map(escapeHtml).join(", ")}</p>
+          <p><strong>Practice:</strong> ${escapeHtml(item.practice)}</p>
+          <p><strong>Resources:</strong> ${item.resources.map(escapeHtml).join(", ")}</p>
+        </article>
+      `).join("")}
+    `;
+    return;
+  }
+
+  result.textContent = JSON.stringify(data, null, 2);
+}
+
+submit.addEventListener("click", async () => {
+  const text = input.value.trim();
+  if (!text) {
+    result.className = "result error";
+    result.textContent = "Please enter some text first.";
+    return;
+  }
+
+  submit.disabled = true;
+  statusEl.textContent = "Generating...";
+  result.className = "result";
+  result.textContent = "EduGenie is thinking...";
+
+  let url;
+  let body;
+
+  if (task.value === "qa") {
+    url = "/qa";
+    body = { question: text };
+  } else if (task.value === "explain") {
+    url = "/explain";
+    body = { text };
+  } else if (task.value === "quiz") {
+    url = "/quiz";
+    body = { text, count: 3 };
+  } else if (task.value === "summarize") {
+    url = "/summarize";
+    body = { text };
+  } else {
+    url = "/learn/recommendations";
+    body = { topic: text, level: level.value, weeks: 6 };
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || "Request failed.");
+    }
+
+    renderResult(data.result);
+    statusEl.textContent = "Complete";
+  } catch (error) {
+    result.className = "result error";
+    result.textContent = error.message;
+    statusEl.textContent = "Error";
+  } finally {
+    submit.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
